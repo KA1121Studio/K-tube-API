@@ -45,7 +45,7 @@ function getVideoId(url){
 
 async function fetchVideo(videoId){
   const promises = apis.map(api=>{
-    return fetch(`${api}/api/v1/videos/${videoId}`)
+    return fetch(`/.netlify/functions/video?v=${videoId}`)
       .then(res=>{if(!res.ok)throw new Error("API失敗");return res.json();})
       .catch(err=>{console.log("API失敗 ->",api);throw err;});
   });
