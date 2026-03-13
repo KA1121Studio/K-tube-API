@@ -1,6 +1,13 @@
 export async function handler(event) {
 
-const videoId = event.queryStringParameters.v;
+const videoId = event.queryStringParameters?.v;
+
+if(!videoId){
+return {
+statusCode:400,
+body:JSON.stringify({error:"missing video id"})
+};
+}
 
 const apis = [
 "https://nyc1.iv.ggtyler.dev",
@@ -11,32 +18,40 @@ const apis = [
 "https://invidious.f5.si",
 "https://invidious.lunivers.trade"
 ];
-  
+
 for (const api of apis) {
-  try {
 
-    const res = await fetch(`${api}/api/v1/videos/${videoId}`);
+try{
 
-    if(res.ok){
-      const data = await res.json();
+const res = await fetch(`${api}/api/v1/videos/${videoId}`);
 
-      return {
-        statusCode:200,
-        headers:{
-          "Content-Type":"application/json",
-          "Access-Control-Allow-Origin":"*"
-        },
-        body:JSON.stringify(data)
-      };
+if(res.ok){
 
-    }
+const data = await res.json();
 
-  } catch {}
+return {
+statusCode:200,
+headers:{
+"Content-Type":"application/json",
+"Access-Control-Allow-Origin":"*"
+},
+body:JSON.stringify(data)
+};
+
+}
+
+}catch(e){
+console.log("API failed:", api);
+}
+
 }
 
 return {
 statusCode:500,
-body:JSON.stringify({error:"API error"})
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({error:"All APIs failed"})
 };
 
 }
