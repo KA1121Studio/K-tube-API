@@ -1,13 +1,6 @@
-export async function handler(event) {
+export async function handler(event){
 
 const videoId = event.queryStringParameters?.v;
-
-if(!videoId){
-return {
-statusCode:400,
-body:JSON.stringify({error:"missing video id"})
-};
-}
 
 const apis = [
 "https://nyc1.iv.ggtyler.dev",
@@ -19,17 +12,19 @@ const apis = [
 "https://invidious.lunivers.trade"
 ];
 
-for (const api of apis) {
+const promises = apis.map(api =>
+  fetch(`${api}/api/v1/videos/${videoId}`)
+    .then(r=>{
+      if(!r.ok) throw new Error();
+      return r.json();
+    })
+);
 
 try{
 
-const res = await fetch(`${api}/api/v1/videos/${videoId}`);
+const data = await Promise.any(promises);
 
-if(res.ok){
-
-const data = await res.json();
-
-return {
+return{
 statusCode:200,
 headers:{
 "Content-Type":"application/json",
@@ -38,20 +33,13 @@ headers:{
 body:JSON.stringify(data)
 };
 
-}
+}catch{
 
-}catch(e){
-console.log("API failed:", api);
-}
-
-}
-
-return {
+return{
 statusCode:500,
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({error:"All APIs failed"})
+body:JSON.stringify({error:"all apis failed"})
 };
+
+}
 
 }
