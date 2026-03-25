@@ -18,59 +18,49 @@ html,body{
   align-items:center;
 }
 
-#overlay{
-  text-align:center;
-  animation: fadeIn 1.5s ease forwards;
-}
-
-@keyframes fadeIn{
-  from{opacity:0;}
-  to{opacity:1;}
-}
-
-h1{
-  font-size:36px;
-  margin-bottom:10px;
-}
-
-p{
-  margin:6px 0;
-}
-
+/* 共通 */
 button{
-  margin-top:20px;
   padding:10px 20px;
   background:#000;
   color:#fff;
   border:none;
   cursor:pointer;
 }
+button:hover{opacity:0.8;}
 
-button:hover{
-  opacity:0.8;
+/* API画面 */
+#overlay{
+  text-align:center;
+  animation: fadeIn 1.5s ease forwards;
+}
+@keyframes fadeIn{
+  from{opacity:0;}
+  to{opacity:1;}
 }
 
 #statusOutput{
   margin-top:20px;
   font-size:16px;
 }
+
+/* debug UI */
+.card{
+  background:#fff;
+  border:1px solid #ddd;
+  padding:20px;
+  border-radius:8px;
+}
+pre{
+  background:#f5f5f5;
+  padding:10px;
+  overflow:auto;
+}
 </style>
 </head>
 
 <body>
 
-<div id="overlay">
-  <h1>K-Tube API</h1>
-
-  <p id="version"></p>
-  <p>APIインターフェース</p>
-  <p>
-    状態確認やデバッグはコンソールから操作できます
-  </p>
-
-  <button onclick="checkStatus()">API状態を確認</button>
-  <div id="statusOutput"></div>
-</div>
+<div id="app"></div>
 
 <script>
 /* ===== モード ===== */
@@ -91,7 +81,6 @@ function computeVersion(){
   const digits = location.href.match(/\d/g);
   return digits ? digits.reduce((a,b)=>a+Number(b),0) : 0;
 }
-document.getElementById("version").textContent = "バージョン: " + computeVersion();
 
 /* ===== API一覧 ===== */
 const apis = [
@@ -104,7 +93,38 @@ const apis = [
 "https://invidious.lunivers.trade"
 ];
 
-/* ===== APIチェック（最速1つだけ） ===== */
+/* ===== UI描画 ===== */
+if(MODE === "debug"){
+  document.getElementById("app").innerHTML = `
+  <div style="max-width:800px;margin:40px auto;width:100%">
+    <h1>デバッグモード</h1>
+    <p style="color:#666">動画情報を取得して詳細を確認できます</p>
+
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <input id="url" placeholder="YouTube URL"
+        style="flex:1;padding:10px;border:1px solid #ccc">
+      <button onclick="start()">取得</button>
+    </div>
+
+    <div id="status" style="margin-top:15px;font-weight:bold"></div>
+    <div id="result" style="margin-top:20px"></div>
+  </div>
+  `;
+}else{
+  document.getElementById("app").innerHTML = `
+  <div id="overlay">
+    <h1>K-Tube API</h1>
+    <p>バージョン: ${computeVersion()}</p>
+    <p>APIインターフェース</p>
+    <p>コンソールでモード切替できます</p>
+
+    <button onclick="checkStatus()">API状態を確認</button>
+    <div id="statusOutput"></div>
+  </div>
+  `;
+}
+
+/* ===== APIチェック ===== */
 async function checkStatus(){
   const out = document.getElementById("statusOutput");
   out.textContent = "確認中...";
@@ -129,46 +149,80 @@ async function checkStatus(){
   }
 }
 
-/* ===== debugモード ===== */
-if(MODE === "debug"){
-  document.body.innerHTML = `
-  <div style="padding:20px">
-    <h2>デバッグモード</h2>
-    <input id="url" placeholder="YouTube URL">
-    <button onclick="start()">取得</button>
-    <div id="status"></div>
-    <div id="result"></div>
-  </div>
-  `;
-}
-
-/* ===== 既存処理 ===== */
+/* ===== 共通処理 ===== */
 function getVideoId(url){
   let m=url.match(/v=([^&]+)/); if(m)return m[1];
   m=url.match(/youtu\.be\/([^?]+)/); if(m)return m[1];
   return null;
 }
 
+/* ===== デバッグ取得 ===== */
 async function start(){
   const url=document.getElementById("url").value;
   const id=getVideoId(url);
-  if(!id){alert("URLが正しくない");return;}
 
-  document.getElementById("status").innerText="取得中...";
+  if(!id){
+    alert("URLが正しくない");
+    return;
+  }
+
+  const status = document.getElementById("status");
+  const result = document.getElementById("result");
+
+  status.innerHTML = "取得中... ⏳";
+  result.innerHTML = "";
 
   try{
+    const startTime = performance.now();
+
     const res=await fetch(`/.netlify/functions/video?v=${id}`);
     const data=await res.json();
 
-    document.getElementById("status").innerText="取得成功";
+    const time = Math.round(performance.now() - startTime);
 
-    document.getElementById("result").innerText=
-      JSON.stringify(data,null,2);
+    status.innerHTML = `取得成功 ✅（${time}ms）`;
 
-  }catch{
-    document.getElementById("status").innerText="取得失敗";
+    const thumbnail = data.videoThumbnails?.pop()?.url || "";
+
+    result.innerHTML = `
+    <div class="card">
+
+      <h2>${data.title}</h2>
+
+      <img src="${thumbnail}" style="max-width:100%;cursor:pointer"
+        onclick="window.open('https://youtube.com/watch?v=${id}')">
+
+      <p><b>チャンネル:</b> ${data.author}</p>
+      <p><b>再生数:</b> ${(data.viewCount||0).toLocaleString()}</p>
+      <p><b>いいね:</b> ${(data.likeCount||0).toLocaleString()}</p>
+
+      <details>
+        <summary>説明文</summary>
+        <pre>${data.description}</pre>
+      </details>
+
+      <details>
+        <summary>字幕</summary>
+        <pre>${JSON.stringify(data.captions,null,2)}</pre>
+      </details>
+
+      <details>
+        <summary>生データ</summary>
+        <pre>${JSON.stringify(data,null,2)}</pre>
+      </details>
+
+    </div>
+    `;
+  }catch(e){
+    status.innerHTML = "取得失敗 ❌";
+    result.innerHTML = `<pre>${e.message}</pre>`;
   }
 }
+
+/* ===== Enterで実行 ===== */
+document.addEventListener("keydown",e=>{
+  if(e.key==="Enter" && MODE==="debug") start();
+});
 </script>
 
 </body>
