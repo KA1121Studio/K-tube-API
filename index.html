@@ -2,36 +2,34 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>K-tube API v2</title>
-
+<title>テスト</title>
 <style>
 body{font-family:sans-serif;padding:40px;background:#fafafa;}
 input{width:400px;padding:10px;margin-right:10px;}
-button{padding:10px 20px;cursor:pointer;}
+button{padding:10px 20px;}
 .video{margin-top:30px;background:#fff;padding:20px;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,0.1);}
-.video img{max-width:400px;cursor:pointer;}
+.video img{max-width:400px;}
 .download a{display:inline-block;margin:5px 10px;padding:5px 10px;background:#4CAF50;color:#fff;border-radius:4px;text-decoration:none;}
 .download a:hover{background:#45a049;}
 pre{background:#f0f0f0;padding:10px;border-radius:4px;overflow-x:auto;}
 h2,h3{margin-bottom:5px;}
-#status{margin-top:10px;font-weight:bold;}
 </style>
 </head>
-
 <body>
 
-<h1 id="title">K-tube API</h1>
+<h1>K-tube API v2 （json板）</h1>
+<input id="url" placeholder="YouTube URL">
+<button onclick="start()">取得</button>
 
-<div id="ui"></div>
+<div id="status"></div>
+<div id="result"></div>
 
 <script>
-/* ===== モード管理（URLベース） ===== */
-let MODE = location.hash === "#debug" ? "debug" : "api";
 
-/* リロード時はAPIへ戻す */
-if(performance.navigation.type === 1){
-  location.hash = "";
-  MODE = "api";
+/* ===== モード（リロードでAPIに戻る仕様） ===== */
+let MODE = "api";
+if(location.hash === "#debug"){
+  MODE = "debug";
 }
 
 window.mode = function(name){
@@ -40,15 +38,21 @@ window.mode = function(name){
     console.log("mode('debug')");
     return;
   }
+
   if(name === "debug"){
     location.hash = "debug";
   }else{
     location.hash = "";
   }
+
   location.reload();
 };
 
-/* ===== API一覧 ===== */
+/* リロード時はAPIに戻す */
+if(performance.navigation.type === 1){
+  location.hash = "";
+}
+
 const apis = [
 "https://nyc1.iv.ggtyler.dev",
 "https://invid-api.poketube.fun",
@@ -59,48 +63,6 @@ const apis = [
 "https://invidious.lunivers.trade"
 ];
 
-/* ===== UI描画 ===== */
-if(MODE === "debug"){
-  document.getElementById("title").innerText = "K-tube API v2（debug）";
-
-  document.getElementById("ui").innerHTML = `
-    <input id="url" placeholder="YouTube URL">
-    <button onclick="start()">取得</button>
-    <div id="status"></div>
-    <div id="result"></div>
-  `;
-}else{
-  document.getElementById("ui").innerHTML = `
-    <button onclick="checkStatus()">API状態を確認</button>
-    <div id="statusOutput"></div>
-  `;
-}
-
-/* ===== APIステータス ===== */
-async function checkStatus(){
-  const out = document.getElementById("statusOutput");
-  out.textContent = "確認中...";
-
-  const start = performance.now();
-
-  const promises = apis.map(api =>
-    fetch(api + "/api/v1/stats")
-      .then(res=>{
-        if(!res.ok) throw new Error();
-        return performance.now();
-      })
-  );
-
-  try{
-    const first = await Promise.any(promises);
-    const time = Math.round(first - start);
-    out.textContent = `正常に動作中（応答速度: ${time}ms）`;
-  }catch{
-    out.textContent = "すべてのAPIが応答しませんでした";
-  }
-}
-
-/* ===== 共通処理 ===== */
 function getVideoId(url){
   let match = url.match(/v=([^&]+)/); if(match) return match[1];
   match = url.match(/youtu\.be\/([^?]+)/); if(match) return match[1];
@@ -111,14 +73,8 @@ function getVideoId(url){
 async function fetchVideo(videoId){
   const promises = apis.map(api=>{
     return fetch(`/.netlify/functions/video?v=${videoId}`)
-      .then(res=>{
-        if(!res.ok) throw new Error("API失敗");
-        return res.json();
-      })
-      .catch(err=>{
-        console.log("API失敗 ->",api);
-        throw err;
-      });
+      .then(res=>{if(!res.ok)throw new Error("API失敗");return res.json();})
+      .catch(err=>{console.log("API失敗 ->",api);throw err;});
   });
   return await Promise.any(promises);
 }
@@ -129,11 +85,11 @@ function extractData(data){
     description:data.description,
     channelName:data.author,
     channelId:data.authorId,
-    viewCount:data.viewCount||0,
-    likeCount:data.likeCount||0,
+    viewCount:data.viewCount,
+    likeCount:data.likeCount,
     published:new Date(data.published*1000).toLocaleString(),
     thumbnail:data.videoThumbnails?.[data.videoThumbnails.length-1]?.url||"",
-    lengthSeconds:data.lengthSeconds||0,
+    lengthSeconds:data.lengthSeconds,
     tags:data.keywords||[],
     liveNow:data.liveNow,
     captions:data.captions||[],
@@ -144,60 +100,36 @@ function extractData(data){
 
 function createDownloadLinks(data){
   let html = "<h3>ダウンロードリンク</h3><div class='download'>";
-
   data.videoFormats.forEach(f=>{
-    html += `<a href="${f.url}" target="_blank">${f.qualityLabel||f.resolution}</a>`;
+    html += `<a href="${f.url}" download target="_blank">${f.qualityLabel||f.resolution}</a>`;
   });
-
   data.adaptiveFormats.filter(f=>f.type.includes("video")).forEach(f=>{
-    html += `<a href="${f.url}" target="_blank">${f.resolution} (video only)</a>`;
+    html += `<a href="${f.url}" download target="_blank">${f.resolution} (video only)</a>`;
   });
-
   data.adaptiveFormats.filter(f=>f.type.includes("audio")).forEach(f=>{
-    html += `<a href="${f.url}" target="_blank">${f.audioQuality||"audio only"}</a>`;
+    html += `<a href="${f.url}" download target="_blank">${f.audioQuality||"audio only"}</a>`;
   });
-
   html += "</div>";
   return html;
 }
 
-/* ===== デバッグ取得 ===== */
 async function start(){
   const url = document.getElementById("url").value;
   const videoId = getVideoId(url);
-
-  if(!videoId){
-    alert("URLが正しくない");
-    return;
-  }
-
-  const status = document.getElementById("status");
-  const result = document.getElementById("result");
-
-  result.innerHTML="";
-  status.innerText="取得中... ⏳";
-
+  if(!videoId){alert("URLが正しくない"); return;}
+  document.getElementById("result").innerHTML="";
+  document.getElementById("status").innerText="取得中...";
   try{
-    const startTime = performance.now();
-
     const data = await fetchVideo(videoId);
     const info = extractData(data);
-
-    const time = Math.round(performance.now() - startTime);
-
-    status.innerText=`取得成功 ✅（${time}ms）`;
-
     let html = `
     <div class="video">
       <h2>${info.title}</h2>
-
-      <img src="${info.thumbnail}"
-        onclick="window.open('https://youtube.com/watch?v=${videoId}')">
-
-      <p>チャンネル: ${info.channelName}</p>
-      <p>再生数: ${info.viewCount.toLocaleString()} | 👍 ${info.likeCount.toLocaleString()}</p>
-      <p>投稿日: ${info.published}</p>
-
+      <img src="${info.thumbnail}">
+      <p>チャンネル: ${info.channelName} (ID: ${info.channelId})</p>
+      <p>再生数: ${info.viewCount.toLocaleString()} | いいね: ${info.likeCount.toLocaleString()}</p>
+      <p>投稿日: ${info.published} | 長さ: ${info.lengthSeconds}s | ライブ: ${info.liveNow}</p>
+      <p>タグ: ${info.tags.join(", ")}</p>
       ${createDownloadLinks(info)}
 
       <h3>説明文</h3>
@@ -206,36 +138,21 @@ async function start(){
       <h3>字幕</h3>
       <pre>${JSON.stringify(info.captions,null,2)}</pre>
 
-      <details>
-        <summary>生データ（JSON）</summary>
-        <pre>${JSON.stringify(data,null,2)}</pre>
-      </details>
-
     </div>`;
-
-    result.innerHTML = html;
-
+    document.getElementById("result").innerHTML = html;
+    document.getElementById("status").innerText="取得成功";
   }catch(e){
-    status.innerText="取得失敗 ❌";
-    result.innerHTML = `<pre>${e.message}</pre>`;
+    document.getElementById("status").innerText="取得失敗";
     console.log(e);
   }
 }
 
-/* Enterキー */
-document.addEventListener("keydown",e=>{
-  if(e.key==="Enter" && MODE==="debug") start();
-});
-
-/* ===== APIモード（JSON出力） ===== */
+// APIモード
 async function autoAPI(){
   const params = new URLSearchParams(location.search);
   const videoId = params.get("v");
-
   if(!videoId) return;
-
   document.body.innerText="Loading...";
-
   try{
     const data = await fetchVideo(videoId);
     const info = extractData(data);
