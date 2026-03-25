@@ -39,11 +39,6 @@ const apis = [
 "https://invidious.lunivers.trade"
 ];
 
-/* 🔥 追加：リロードでAPIモードに戻す */
-if(performance.navigation.type === 1){
-  location.href = location.pathname;
-}
-
 function getVideoId(url){
   let match = url.match(/v=([^&]+)/); if(match) return match[1];
   match = url.match(/youtu\.be\/([^?]+)/); if(match) return match[1];
@@ -142,11 +137,15 @@ async function start(){
 
       ${createDownloadLinks(info)}
 
-      <h3>説明文</h3>
-      <pre>${info.description}</pre>
+      <details>
+        <summary>説明文</summary>
+        <pre>${info.description}</pre>
+      </details>
 
-      <h3>字幕</h3>
-      <pre>${JSON.stringify(info.captions,null,2)}</pre>
+      <details>
+        <summary>字幕</summary>
+        <pre>${JSON.stringify(info.captions,null,2)}</pre>
+      </details>
 
       <details>
         <summary>生データ（JSON）</summary>
