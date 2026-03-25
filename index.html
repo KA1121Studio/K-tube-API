@@ -2,66 +2,38 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>K-Tube API</title>
+<title>K-tube API v2</title>
 
 <style>
-body{
-  margin:0;
-  font-family:sans-serif;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  height:100vh;
-  background:#fff;
-}
-
-#overlay{
-  text-align:center;
-  animation: fadeIn 1.5s ease forwards;
-}
-
-@keyframes fadeIn{
-  from{opacity:0;}
-  to{opacity:1;}
-}
-
-button{
-  padding:10px 20px;
-  background:#000;
-  color:#fff;
-  border:none;
-  cursor:pointer;
-}
-button:hover{opacity:0.8;}
-
-#statusOutput{
-  margin-top:20px;
-}
+body{font-family:sans-serif;padding:40px;background:#fafafa;transition:0.3s;}
+input{width:400px;padding:10px;margin-right:10px;}
+button{padding:10px 20px;cursor:pointer;}
+.video{margin-top:30px;background:#fff;padding:20px;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,0.1);}
+.video img{max-width:400px;cursor:pointer;}
+.download a{display:inline-block;margin:5px 10px;padding:5px 10px;background:#4CAF50;color:#fff;border-radius:4px;text-decoration:none;}
+.download a:hover{background:#45a049;}
+pre{background:#f0f0f0;padding:10px;border-radius:4px;overflow-x:auto;}
+h2,h3{margin-bottom:5px;}
+#status{margin-top:10px;font-weight:bold;}
 </style>
 </head>
 
 <body>
 
-<div id="overlay">
-  <h1>K-Tube API</h1>
-  <p>バージョン: <span id="version"></span></p>
-  <p>APIインターフェース</p>
-  <p>コンソールでモード切替できます</p>
+<h1 id="title">K-tube API v2（debug）</h1>
 
-  <button onclick="checkStatus()">API状態を確認</button>
-  <div id="statusOutput"></div>
+<div id="ui">
+  <input id="url" placeholder="YouTube URL">
+  <button onclick="start()">取得</button>
 </div>
 
+<div id="status"></div>
+<div id="result"></div>
+
 <script>
-/* ===== Version ===== */
-function computeVersion(){
-  const digits = location.href.match(/\d/g);
-  return digits ? digits.reduce((a,b)=>a+Number(b),0) : 0;
-}
+let isMode2 = false;
 
-document.getElementById("version").textContent = computeVersion();
-
-/* ===== API一覧 ===== */
+/* ================= API ================= */
 const apis = [
 "https://nyc1.iv.ggtyler.dev",
 "https://invid-api.poketube.fun",
@@ -72,29 +44,147 @@ const apis = [
 "https://invidious.lunivers.trade"
 ];
 
-/* ===== APIチェック ===== */
-async function checkStatus(){
-  const out = document.getElementById("statusOutput");
-  out.textContent = "確認中...";
+function getVideoId(url){
+  let match = url.match(/v=([^&]+)/); if(match) return match[1];
+  match = url.match(/youtu\.be\/([^?]+)/); if(match) return match[1];
+  match = url.match(/shorts\/([^?]+)/); if(match) return match[1];
+  return null;
+}
 
-  const start = performance.now();
+async function fetchVideo(videoId){
+  const promises = apis.map(api=>{
+    return fetch(`/.netlify/functions/video?v=${videoId}`)
+      .then(res=>{
+        if(!res.ok) throw new Error("API失敗");
+        return res.json();
+      });
+  });
+  return await Promise.any(promises);
+}
+
+function extractData(data){
+  return {
+    title:data.title,
+    description:data.description,
+    channelName:data.author,
+    viewCount:data.viewCount||0,
+    likeCount:data.likeCount||0,
+    published:new Date(data.published*1000).toLocaleString(),
+    thumbnail:data.videoThumbnails?.[data.videoThumbnails.length-1]?.url||"",
+    captions:data.captions||[],
+    videoFormats:data.formatStreams||[],
+    adaptiveFormats:data.adaptiveFormats||[]
+  };
+}
+
+function createDownloadLinks(data){
+  let html = "<h3>ダウンロードリンク</h3><div class='download'>";
+
+  data.videoFormats.forEach(f=>{
+    html += `<a href="${f.url}" target="_blank">${f.qualityLabel||f.resolution}</a>`;
+  });
+
+  data.adaptiveFormats.filter(f=>f.type.includes("video")).forEach(f=>{
+    html += `<a href="${f.url}" target="_blank">${f.resolution} (video only)</a>`;
+  });
+
+  data.adaptiveFormats.filter(f=>f.type.includes("audio")).forEach(f=>{
+    html += `<a href="${f.url}" target="_blank">${f.audioQuality||"audio only"}</a>`;
+  });
+
+  html += "</div>";
+  return html;
+}
+
+/* ================= 通常モード ================= */
+async function start(){
+  const url = document.getElementById("url").value;
+  const videoId = getVideoId(url);
+
+  if(!videoId){
+    alert("URLが正しくない");
+    return;
+  }
+
+  const status = document.getElementById("status");
+  const result = document.getElementById("result");
+
+  result.innerHTML="";
+  status.innerText="取得中... ⏳";
 
   try{
-    const promises = apis.map(api =>
-      fetch(api + "/api/v1/stats").then(res=>{
-        if(!res.ok) throw new Error();
-        return true;
-      })
-    );
+    const data = await fetchVideo(videoId);
+    const info = extractData(data);
 
-    await Promise.any(promises);
+    status.innerText="取得成功 ✅";
 
-    const time = Math.round(performance.now() - start);
-    out.textContent = `正常に動作中（応答速度: ${time}ms）`;
-  }catch{
-    out.textContent = "すべてのAPIが応答しませんでした";
+    if(isMode2){
+      /* ===== モード2（JSON表示） ===== */
+      document.body.innerHTML = `<pre>${JSON.stringify(info,null,2)}</pre>`;
+      return;
+    }
+
+    /* ===== 通常UI ===== */
+    result.innerHTML = `
+    <div class="video">
+      <h2>${info.title}</h2>
+
+      <img src="${info.thumbnail}"
+        onclick="window.open('https://youtube.com/watch?v=${videoId}')">
+
+      <p>チャンネル: ${info.channelName}</p>
+      <p>再生数: ${info.viewCount.toLocaleString()} | 👍 ${info.likeCount.toLocaleString()}</p>
+      <p>投稿日: ${info.published}</p>
+
+      ${createDownloadLinks(info)}
+
+      <details>
+        <summary>説明文</summary>
+        <pre>${info.description}</pre>
+      </details>
+
+      <details>
+        <summary>字幕</summary>
+        <pre>${JSON.stringify(info.captions,null,2)}</pre>
+      </details>
+    </div>`;
+
+  }catch(e){
+    status.innerText="取得失敗 ❌";
+    console.log(e);
   }
 }
+
+/* ================= モード切替 ================= */
+function mode(){
+  isMode2 = !isMode2;
+  console.log("現在モード:", isMode2 ? "2(JSON)" : "1(UI)");
+
+  if(isMode2){
+    document.body.style.background="#111";
+    document.body.style.color="#0f0";
+  }else{
+    location.reload(); // 元のUIに戻す（これが一番安全）
+  }
+}
+
+/* ================= Enterキー ================= */
+document.addEventListener("keydown",e=>{
+  if(e.key==="Enter") start();
+});
+
+/* ================= URL API ================= */
+(async function(){
+  const params = new URLSearchParams(location.search);
+  const videoId = params.get("v");
+
+  if(!videoId) return;
+
+  const data = await fetchVideo(videoId);
+  const info = extractData(data);
+
+  document.body.innerHTML = `<pre>${JSON.stringify(info,null,2)}</pre>`;
+})();
 </script>
 
 </body>
