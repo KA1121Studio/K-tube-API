@@ -59,17 +59,6 @@ function computeVersion(){
 
 document.getElementById("version").textContent = computeVersion();
 
-/* ===== API一覧 ===== */
-const apis = [
-"https://nyc1.iv.ggtyler.dev",
-"https://invid-api.poketube.fun",
-"https://cal1.iv.ggtyler.dev",
-"https://invidious.nikkosphere.com",
-"https://lekker.gay",
-"https://invidious.f5.si",
-"https://invidious.lunivers.trade"
-];
-
 /* ===== APIチェック ===== */
 async function checkStatus(){
   const out = document.getElementById("statusOutput");
@@ -77,9 +66,18 @@ async function checkStatus(){
 
   const start = performance.now();
 
+  // テスト用の動画ID（存在する適当なID）
+  const testVideoId = "dQw4w9WgXcQ";
+
   try{
+    const controller = new AbortController();
+    const timeout = setTimeout(()=>controller.abort(), 5000);
+
     const promises = apis.map(api =>
-      fetch(api + "/api/v1/stats").then(res=>{
+      fetch(api + "/.netlify/functions/video?v=" + testVideoId, {
+        method: "GET",
+        signal: controller.signal
+      }).then(res=>{
         if(!res.ok) throw new Error();
         return true;
       })
@@ -87,8 +85,11 @@ async function checkStatus(){
 
     await Promise.any(promises);
 
+    clearTimeout(timeout);
+
     const time = Math.round(performance.now() - start);
     out.textContent = `正常に動作中（応答速度: ${time}ms）`;
+
   }catch{
     out.textContent = "すべてのAPIが応答しませんでした";
   }
